@@ -1,6 +1,6 @@
 // app.js
 
-const apiBaseUrl = "https://apis.erzen.xyz";
+const apiBaseUrl = "https://apis.erzen.tk";
 let accessToken = localStorage.getItem("accessToken");
 let refreshInterval;
 let chatHistory = [];
@@ -36,7 +36,7 @@ function checkAuth() {
 
 function redirectToLogin() {
   window.location.href =
-    "https://auth.erzen.xyz?return_to=" +
+    "https://auth.erzen.tk?return_to=" +
     encodeURIComponent(window.location.href);
 }
 
