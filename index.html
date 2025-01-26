@@ -28,11 +28,16 @@
     <div id="container">
       <aside id="sidebar">
         <div id="tab-selector">
-          <button id="memory-tab" class="tab active">Memory</button>
+          <button id="threads-tab" class="tab active">Chats</button>
+          <button id="memory-tab" class="tab">Memory</button>
           <button id="instructions-tab" class="tab">Instructions</button>
         </div>
         <div id="tab-content">
-          <div id="memory-content" class="content active">
+          <div id="threads-content" class="content active">
+            <button id="new-chat" class="action-button">New Chat</button>
+            <div id="threads-list"></div>
+          </div>
+          <div id="memory-content" class="content">
             <button id="clear-memory" class="action-button">
               Clear Memory
             </button>
@@ -59,6 +64,9 @@
         </header> -->
         <section id="chat-history"></section>
         <form id="chat-form">
+          <select id="model-select" class="model-selector">
+            <option value="gemini-1.5-flash" selected>Switch Model</option>
+          </select>
           <input
             type="text"
             id="chat-input"
