@@ -97,7 +97,7 @@ function getAllChats(page = 1, limit = 10) {
   });
 }
 // Retrieve threads with pagination
-function getAllThreads(page = 1, limit = 10) {
+function getAllThreads(page = 1, limit = 17) {
   return new Promise((resolve) => {
     if (!db) return resolve([]);
     const tx = db.transaction("threads", "readonly");
@@ -139,7 +139,7 @@ let accessToken = localStorage.getItem("accessToken");
 let refreshInterval;
 let chatHistory = [];
 
-let currentThreadPage = 1;
+let currentThreadsPage = 1;
 const THREADS_PER_PAGE = 3;
 let currentMessagePage = 1;
 
@@ -469,6 +469,18 @@ function addMessage(sender, content, isStreaming = false) {
   const textEl = document.createElement("div");
   textEl.className = "text";
   textEl.innerHTML = isStreaming ? content : marked.parse(content);
+  textEl.querySelectorAll("pre code").forEach((block) => {
+    hljs.highlightElement(block);
+
+    const copyBtn = document.createElement("button");
+    copyBtn.className = "copy-button";
+    copyBtn.textContent = "Copy";
+    copyBtn.addEventListener("click", () => {
+      navigator.clipboard.writeText(block.innerText);
+    });
+    block.parentNode.style.position = "relative";
+    block.parentNode.appendChild(copyBtn);
+  });
 
   messageEl.appendChild(textEl);
   chatHistoryEl.appendChild(messageEl);
@@ -531,6 +543,7 @@ async function sendMessage(message) {
               const data = JSON.parse(line.slice(6)); // Remove 'data: ' prefix
               if (data.content) {
                 fullContent += data.content;
+                console.log("Full content:", data.content);
                 botMessage.innerHTML = marked.parse(fullContent);
                 botMessage.scrollIntoView({ behavior: "smooth" });
               }
@@ -898,3 +911,187 @@ chatHistoryEl.addEventListener("scroll", () => {
     loadMoreMessages(currentChatId);
   }
 });
+
+document
+  .getElementById("load-more-threads")
+  .addEventListener("click", () => loadMoreThreads());
+
+// Example function to load more threads
+async function loadMoreThreads() {
+  const response = await fetch(
+    `${apiBaseUrl}/intelligence/chat/threads?page=${
+      currentThreadsPage + 1
+    }&limit=17`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  );
+  const newThreads = await response.json();
+  if (!newThreads || !Array.isArray(newThreads) || !newThreads.length) return;
+  // Ensure date grouping is applied
+  newThreads.forEach((thread) => {
+    // Reusing or calling your existing 'group by date' logic
+    renderThreadByDate(thread);
+  });
+  currentThreadsPage += 1;
+}
+
+function renderThreadByDate(thread) {
+  const list = document.getElementById("threads-list");
+  // Determine the date group for the thread
+  const threadDate = new Date(thread.createdAt);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+
+  let dateGroup;
+  if (threadDate.toDateString() === today.toDateString()) {
+    dateGroup = "Today";
+  } else if (threadDate.toDateString() === yesterday.toDateString()) {
+    dateGroup = "Yesterday";
+  } else if (threadDate > new Date(today - 3 * 24 * 60 * 60 * 1000)) {
+    dateGroup = "Last 3 Days";
+  } else if (threadDate > new Date(today - 7 * 24 * 60 * 60 * 1000)) {
+    dateGroup = "Last 7 Days";
+  } else if (threadDate.getMonth() === today.getMonth()) {
+    dateGroup = "This Month";
+  } else if (threadDate.getFullYear() === today.getFullYear()) {
+    dateGroup = "This Year";
+  } else {
+    dateGroup = "Older";
+  }
+
+  // Check if this date group header is already present
+  // (you'll need to track which groups you've rendered, for example in a global array named 'renderedGroups')
+  if (!window.renderedGroups) {
+    window.renderedGroups = new Set();
+  }
+  if (!window.renderedGroups.has(dateGroup)) {
+    const groupHeader = document.createElement("div");
+    groupHeader.className = "thread-group-header";
+    groupHeader.textContent = dateGroup;
+    list.appendChild(groupHeader);
+    window.renderedGroups.add(dateGroup);
+  }
+
+  // Create and append the thread item
+  const div = document.createElement("div");
+  div.className = "thread-item";
+  div.textContent = thread.title || "New Chat";
+  div.dataset.threadId = thread.id;
+
+  // Example click handler
+  div.addEventListener("click", () => {
+    currentChatId = thread.id;
+    document
+      .querySelectorAll(".thread-item")
+      .forEach((item) => item.classList.remove("active"));
+    div.classList.add("active");
+    loadThreadMessages(thread.id);
+  });
+
+  list.appendChild(div);
+}
+
+document
+  .getElementById("search-threads")
+  .addEventListener("click", openSearchModal);
+document
+  .querySelector(".close-button")
+  .addEventListener("click", closeSearchModal);
+document
+  .getElementById("search-input")
+  .addEventListener("input", searchThreads);
+
+// Enhanced Search Functionality
+let searchTimeout;
+
+async function searchThreads(event) {
+  const query = event.target.value.trim().toLowerCase();
+  const resultsList = document.getElementById("search-results");
+  const noResults = document.querySelector(".no-results");
+  const loading = document.querySelector(".loading-indicator");
+
+  // Show loading indicator
+  loading.style.display = query ? "block" : "none";
+
+  // Clear previous timeout and results
+  clearTimeout(searchTimeout);
+  resultsList.innerHTML = "";
+  noResults.style.display = "none";
+
+  if (!query) return;
+
+  // Add slight debounce
+  searchTimeout = setTimeout(async () => {
+    try {
+      const threadsData = await getAllThreads();
+      const filtered = threadsData.threads.filter((thread) =>
+        `${thread.title} ${thread.contentSnippet}`.toLowerCase().includes(query)
+      );
+
+      if (filtered.length > 0) {
+        resultsList.innerHTML = filtered
+          .map(
+            (thread) => `
+          <li onclick="selectThread('${thread.id}')">
+            <i class="fas fa-comment-alt result-icon"></i>
+            <div class="result-content">
+              <div class="result-title">${thread.title}</div>
+              <div class="result-snippet">${thread.contentSnippet || ""}</div>
+            </div>
+          </li>
+        `
+          )
+          .join("");
+      } else {
+        noResults.style.display = "block";
+      }
+    } catch (error) {
+      console.error("Search error:", error);
+      resultsList.innerHTML = `<li class="error">Error loading results</li>`;
+    } finally {
+      loading.style.display = "none";
+    }
+  }, 300);
+}
+
+// Enhanced Modal Interactions
+function openSearchModal() {
+  const modal = document.getElementById("search-modal");
+  modal.style.display = "flex";
+  setTimeout(() => modal.classList.add("show"), 10);
+  document.body.style.overflow = "hidden";
+  document.getElementById("search-input").focus();
+}
+
+function closeSearchModal() {
+  const modal = document.getElementById("search-modal");
+  modal.classList.remove("show");
+  setTimeout(() => {
+    modal.style.display = "none";
+    document.getElementById("search-input").value = "";
+    document.getElementById("search-results").innerHTML = "";
+    document.querySelector(".no-results").style.display = "none";
+  }, 300);
+}
+
+function handleModalKeys(event) {
+  if (event.key === "Escape") closeSearchModal();
+  if (event.key === "Enter" && event.target.id === "search-input") {
+    event.preventDefault();
+  }
+}
+
+// Add click outside to close
+window.onclick = function (event) {
+  const modal = document.getElementById("search-modal");
+  if (event.target === modal) {
+    closeSearchModal();
+  }
+};
+
+function selectThread(threadId) {
+  closeSearchModal();
+  loadThreadMessages(threadId);
+}
