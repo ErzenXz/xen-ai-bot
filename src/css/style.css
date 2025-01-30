@@ -859,3 +859,26 @@ pre:hover .copy-button {
   text-align: center;
   color: rgba(255, 255, 255, 0.7);
 }
+
+.message.error-message {
+  border-left: 4px solid #ff4444;
+  background: #ffe6e6;
+}
+
+.error-header {
+  font-weight: bold;
+  color: #cc0000;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.error-header i {
+  font-size: 1.2em;
+}
+
+.error-content {
+  color: #990000;
+  white-space: pre-wrap;
+}

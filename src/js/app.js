@@ -488,9 +488,127 @@ function addMessage(sender, content, isStreaming = false) {
 
   return textEl;
 }
+// async function sendMessage(message) {
+//   const stream = true;
+//   const model = modelSelect.value;
+//   const body = {
+//     message,
+//     model,
+//     chatId: currentChatId || undefined,
+//   };
+
+//   const typingIndicator = createTypingIndicator();
+//   const chatHistoryEl = document.getElementById("chat-history");
+//   try {
+//     chatHistoryEl.appendChild(typingIndicator);
+
+//     const response = await fetch(
+//       `${apiBaseUrl}/intelligence/chat${stream ? "/stream" : ""}`,
+//       {
+//         method: "POST",
+//         headers: {
+//           "Content-Type": "application/json",
+//           Authorization: `Bearer ${accessToken}`,
+//         },
+//         body: JSON.stringify(body),
+//       }
+//     );
+
+//     if (!response.ok) throw new Error("Request failed");
+
+//     chatHistoryEl.removeChild(typingIndicator);
+
+//     if (stream) {
+//       // Handle streaming response
+//       const reader = response.body.getReader();
+//       const decoder = new TextDecoder();
+//       let buffer = "";
+//       let fullContent = "";
+//       const botMessage = addMessage("bot", "", true);
+//       let chatIdReceived = false;
+
+//       while (true) {
+//         const { done, value } = await reader.read();
+//         if (done) break;
+
+//         buffer += decoder.decode(value, { stream: true });
+
+//         // Process each complete line
+//         const lines = buffer.split("\n");
+//         buffer = lines.pop(); // Keep incomplete line for next chunk
+
+//         for (const line of lines) {
+//           if (line.startsWith("data: ")) {
+//             try {
+//               const data = line.slice(6); // Remove 'data: ' prefix
+
+//               // Check if this is a chat ID message
+//               if (!chatIdReceived && data.includes("__CHATID__")) {
+//                 const matches = data.match(/__CHATID__([^_]+)__/);
+//                 if (matches && matches[1]) {
+//                   currentChatId = matches[1];
+//                   loadChatThreads();
+//                   chatIdReceived = true;
+//                   continue;
+//                 }
+//               }
+
+//               // Handle regular message content
+//               const jsonData = JSON.parse(data);
+//               if (jsonData.content) {
+//                 fullContent += jsonData.content;
+//                 botMessage.innerHTML = marked.parse(fullContent);
+//                 botMessage.scrollIntoView({ behavior: "smooth" });
+//               }
+//             } catch (e) {
+//               // If JSON parsing fails, it might be a chat ID message
+//               if (!chatIdReceived && data.includes("__CHATID__")) {
+//                 const matches = data.match(/__CHATID__([^_]+)__/);
+//                 if (matches && matches[1]) {
+//                   currentChatId = matches[1];
+//                   console.log("Received chatId:", currentChatId);
+//                   loadChatThreads();
+//                   chatIdReceived = true;
+//                 }
+//               } else {
+//                 console.error("Error processing stream chunk:", e);
+//               }
+//             }
+//           }
+//         }
+//       }
+
+//       // Final update with remaining buffer
+//       if (buffer.startsWith("data: ")) {
+//         try {
+//           const data = JSON.parse(buffer.slice(6));
+//           if (data.content) {
+//             fullContent += data.content;
+//             botMessage.innerHTML = marked.parse(fullContent);
+//           }
+//         } catch (e) {
+//           console.error("Error parsing final chunk:", e);
+//         }
+//       }
+//     } else {
+//       // Existing non-stream handling
+//       const data = await response.json();
+//       addMessage("bot", data.result.content);
+
+//       if (!currentChatId && data.chatId) {
+//         currentChatId = data.chatId;
+//         loadChatThreads();
+//       }
+//     }
+//   } catch (error) {
+//     console.error("Error:", error);
+//     chatHistoryEl.removeChild(typingIndicator);
+//     addMessage("bot", "Sorry, I couldn't process your message.");
+//   }
+// }
 
 async function sendMessage(message) {
-  const stream = false;
+  const stream = true;
   const model = modelSelect.value;
   const body = {
     message,
@@ -500,6 +618,7 @@ async function sendMessage(message) {
 
   const typingIndicator = createTypingIndicator();
   const chatHistoryEl = document.getElementById("chat-history");
+
   try {
     chatHistoryEl.appendChild(typingIndicator);
 
@@ -520,57 +639,105 @@ async function sendMessage(message) {
     chatHistoryEl.removeChild(typingIndicator);
 
     if (stream) {
-      // Handle streaming response
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
       let fullContent = "";
+      let chatIdReceived = false;
+      let hasError = false;
+
+      // Create temporary text node for streaming
       const botMessage = addMessage("bot", "", true);
+      const tempTextNode = document.createTextNode("");
+      botMessage.appendChild(tempTextNode);
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-
-        // Process each complete line
         const lines = buffer.split("\n");
-        buffer = lines.pop(); // Keep incomplete line for next chunk
+        buffer = lines.pop();
 
         for (const line of lines) {
           if (line.startsWith("data: ")) {
+            const rawData = line.slice(6);
+
+            // Handle chat ID first
+            if (!chatIdReceived && rawData.includes("__CHATID__")) {
+              const matches = rawData.match(/__CHATID__([^_]+)__/);
+              if (matches?.[1]) {
+                currentChatId = matches[1];
+                loadChatThreads();
+                chatIdReceived = true;
+                continue;
+              }
+            }
+
             try {
-              const data = JSON.parse(line.slice(6)); // Remove 'data: ' prefix
-              if (data.content) {
-                fullContent += data.content;
-                console.log("Full content:", data.content);
-                botMessage.innerHTML = marked.parse(fullContent);
+              const jsonData = JSON.parse(rawData);
+
+              // Handle API errors
+              if (jsonData.error) {
+                hasError = true;
+                botMessage.classList.add("error-message");
+                botMessage.innerHTML = `
+                  <div class="error-header">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    API Error
+                  </div>
+                  <div class="error-content">${jsonData.error}</div>
+                `;
+                reader.cancel();
+                break;
+              }
+
+              if (jsonData.content) {
+                fullContent += jsonData.content;
+                tempTextNode.nodeValue = fullContent;
                 botMessage.scrollIntoView({ behavior: "smooth" });
               }
             } catch (e) {
-              console.error("Error parsing stream chunk:", e);
+              if (!chatIdReceived && rawData.includes("__CHATID__")) {
+                const matches = rawData.match(/__CHATID__([^_]+)__/);
+                if (matches?.[1]) {
+                  currentChatId = matches[1];
+                  loadChatThreads();
+                  chatIdReceived = true;
+                }
+              } else if (!hasError) {
+                console.error("Error processing stream chunk:", e);
+              }
             }
           }
         }
+        if (hasError) break;
       }
 
-      // Final update with remaining buffer
-      if (buffer.startsWith("data: ")) {
+      // After stream completes, format the final content
+      if (!hasError) {
         try {
-          const data = JSON.parse(buffer.slice(6));
-          if (data.content) {
-            fullContent += data.content;
-            botMessage.innerHTML = marked.parse(fullContent);
-          }
-        } catch (e) {
-          console.error("Error parsing final chunk:", e);
-        }
-      }
+          // Replace text node with formatted markdown
+          botMessage.removeChild(tempTextNode);
+          botMessage.innerHTML = marked.parse(fullContent);
 
-      // Update chatId if new thread created
-      if (chatInfo.chatId) {
-        currentChatId = chatInfo.chatId;
-        loadChatThreads();
+          // Add syntax highlighting and copy buttons
+          botMessage.querySelectorAll("pre code").forEach((block) => {
+            hljs.highlightElement(block);
+
+            const copyBtn = document.createElement("button");
+            copyBtn.className = "copy-button";
+            copyBtn.textContent = "Copy";
+            copyBtn.addEventListener("click", () => {
+              navigator.clipboard.writeText(block.innerText);
+            });
+            block.parentNode.style.position = "relative";
+            block.parentNode.appendChild(copyBtn);
+          });
+        } catch (e) {
+          console.error("Error formatting message:", e);
+          botMessage.innerHTML = fullContent; // Fallback to raw text
+        }
       }
     } else {
       // Existing non-stream handling
@@ -585,7 +752,10 @@ async function sendMessage(message) {
   } catch (error) {
     console.error("Error:", error);
     chatHistoryEl.removeChild(typingIndicator);
-    addMessage("bot", "Sorry, I couldn't process your message.");
+    addMessage(
+      "bot",
+      `<div class="error-message">⚠️ Error: ${error.message}</div>`
+    );
   }
 }
 
@@ -1093,5 +1263,6 @@ window.onclick = function (event) {
 
 function selectThread(threadId) {
   closeSearchModal();
+  currentChatId = threadId;
   loadThreadMessages(threadId);
 }
