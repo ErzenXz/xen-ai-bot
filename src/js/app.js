@@ -142,78 +142,52 @@ let chatHistory = [];
 let currentThreadsPage = 1;
 const THREADS_PER_PAGE = 3;
 let currentMessagePage = 1;
+async function getAIModels() {
+  const response = await fetch(
+    `${apiBaseUrl}/intelligence/dev/intelligence/models`
+  );
+  const modelsArray = await response.json();
+  // Convert the array into a key/value object.
+  // Use the model’s "name" as the key and the "model" property as the value.
+  const models = {};
+  const displayNames = {};
+  modelsArray.forEach((item) => {
+    models[item.name] = item.model;
+    // For display purposes, you can use the name (or item.description if preferred)
+    displayNames[item.model] = item.description;
+  });
+  return { models, displayNames };
+}
 
-const AIModels = {
-  // Gemini Models
-  Gemini: "gemini-exp-1121",
-  GeminiFast: "gemini-1.5-flash",
-  GeminiFastCheap: "gemini-1.5-flash-8b",
-  GeminiBetter: "gemini-2.0-flash-exp",
-  GeminiAdvanced: "gemini-2.0-flash-thinking-exp",
-
-  // OpenAI Models
-  GPT4OMini: "gpt-4o-mini-2024-07-18",
-  GTP40: "chatgpt-4o-latest",
-  GPTO1: "o1",
-  GPTO1Mini: "o1-mini",
-  GPT35Turbo: "gpt-3.5-turbo-0125",
-
-  // Deepseek Models
-  DeepseekV3: "deepseek-chat",
-  DeepseekR1: "deepseek-reasoner",
-
-  // Llama Models
-  LlamaV3_3_70B: "accounts/fireworks/models/llama-v3p3-70b-instruct",
-  Llama_DeepseekV3: "accounts/fireworks/models/deepseek-v3",
-  LlamaV3_1_400B: "accounts/fireworks/models/llama-v3p1-405b-instruct",
-  LlamaV3_1_8B: "accounts/fireworks/models/llama-v3p1-8b-instruct",
-  GemmaV2Big: "accounts/fireworks/models/gemma2-9b-it",
-  GemmaV1Big: "accounts/fireworks/models/gemma-7b-it",
-  GemmaV1Small: "accounts/fireworks/models/gemma-2b-it",
-  Qwen2: "accounts/fireworks/models/qwen2p5-72b-instruct",
-  Qwen2Coder: "accounts/fireworks/models/qwen2p5-coder-32b-instruct",
-  NousResearch: "accounts/fireworks/models/nous-hermes-2-mixtral-8x7b-dpo",
-  Mistral22B: "accounts/fireworks/models/hermes-2-pro-mistral-7b",
-};
-
-const modelDisplayNames = {
-  "gemini-2.0-flash-exp": "Gemini 2.0",
-  "gemini-2.0-flash-thinking-exp": "Gemini 2.0 Thinking",
-  "gemini-exp-1121": "Gemini 2.0 Experimental",
-  "gemini-1.5-flash": "Gemini 1.5 Flash",
-  "gemini-1.5-flash-8b": "Gemini 1.5 Flash (Light)",
-  "gpt-4o-mini-2024-07-18": "GPT-4 Mini",
-  "chatgpt-4o-latest": "GPT-4o",
-  o1: "OpenAI o1",
-  "o1-mini": "OpenAI o1 Mini",
-  "gpt-3.5-turbo-0125": "GPT-3.5 Turbo",
-  "deepseek-chat": "Deepseek V3",
-  "deepseek-reasoner": "Deepseek R1",
-  "accounts/fireworks/models/llama-v3p3-70b-instruct": "Llama 3 (70B)",
-  "accounts/fireworks/models/deepseek-v3": "Deepseek V3 (Fireworks)",
-  "accounts/fireworks/models/llama-v3p1-405b-instruct": "Llama 3 (400B)",
-  "accounts/fireworks/models/llama-v3p1-8b-instruct": "Llama 3 (8B)",
-  "accounts/fireworks/models/gemma2-9b-it": "Gemma 2.0 (9B)",
-  "accounts/fireworks/models/gemma-7b-it": "Gemma (7B)",
-  "accounts/fireworks/models/gemma-2b-it": "Gemma (2B)",
-  "accounts/fireworks/models/qwen2p5-72b-instruct": "Qwen 2.5",
-  "accounts/fireworks/models/qwen2p5-coder-32b-instruct": "Qwen 2.5 Coder",
-  "accounts/fireworks/models/nous-hermes-2-mixtral-8x7b-dpo": "Nous Hermes 2",
-  "accounts/fireworks/models/hermes-2-pro-mistral-7b": "Mistral (7B)",
-};
+let AIModels = {};
+let modelDisplayNames = {};
 
 let currentChatId = null;
 let currentModel = AIModels.GeminiBetter;
 const modelSelect = document.getElementById("model-select");
 
 function initModelSelector() {
-  Object.entries(AIModels).forEach(([_, value]) => {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = modelDisplayNames[value];
-    modelSelect.appendChild(option);
+  getAIModels().then(({ models, displayNames }) => {
+    AIModels = models;
+    modelDisplayNames = displayNames;
+
+    // Convert AIModels entries to an array and sort by display name (a-z)
+    const sortedEntries = Object.entries(AIModels).sort(
+      ([, valueA], [, valueB]) => {
+        return modelDisplayNames[valueA].localeCompare(
+          modelDisplayNames[valueB]
+        );
+      }
+    );
+
+    sortedEntries.forEach(([_, value]) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = modelDisplayNames[value];
+      modelSelect.appendChild(option);
+    });
+    modelSelect.value = AIModels.Gemini;
   });
-  modelSelect.value = currentModel;
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -488,132 +462,15 @@ function addMessage(sender, content, isStreaming = false) {
 
   return textEl;
 }
-// async function sendMessage(message) {
-//   const stream = true;
-//   const model = modelSelect.value;
-//   const body = {
-//     message,
-//     model,
-//     chatId: currentChatId || undefined,
-//   };
-
-//   const typingIndicator = createTypingIndicator();
-//   const chatHistoryEl = document.getElementById("chat-history");
-//   try {
-//     chatHistoryEl.appendChild(typingIndicator);
-
-//     const response = await fetch(
-//       `${apiBaseUrl}/intelligence/chat${stream ? "/stream" : ""}`,
-//       {
-//         method: "POST",
-//         headers: {
-//           "Content-Type": "application/json",
-//           Authorization: `Bearer ${accessToken}`,
-//         },
-//         body: JSON.stringify(body),
-//       }
-//     );
-
-//     if (!response.ok) throw new Error("Request failed");
-
-//     chatHistoryEl.removeChild(typingIndicator);
-
-//     if (stream) {
-//       // Handle streaming response
-//       const reader = response.body.getReader();
-//       const decoder = new TextDecoder();
-//       let buffer = "";
-//       let fullContent = "";
-//       const botMessage = addMessage("bot", "", true);
-//       let chatIdReceived = false;
-
-//       while (true) {
-//         const { done, value } = await reader.read();
-//         if (done) break;
-
-//         buffer += decoder.decode(value, { stream: true });
-
-//         // Process each complete line
-//         const lines = buffer.split("\n");
-//         buffer = lines.pop(); // Keep incomplete line for next chunk
-
-//         for (const line of lines) {
-//           if (line.startsWith("data: ")) {
-//             try {
-//               const data = line.slice(6); // Remove 'data: ' prefix
-
-//               // Check if this is a chat ID message
-//               if (!chatIdReceived && data.includes("__CHATID__")) {
-//                 const matches = data.match(/__CHATID__([^_]+)__/);
-//                 if (matches && matches[1]) {
-//                   currentChatId = matches[1];
-//                   loadChatThreads();
-//                   chatIdReceived = true;
-//                   continue;
-//                 }
-//               }
-
-//               // Handle regular message content
-//               const jsonData = JSON.parse(data);
-//               if (jsonData.content) {
-//                 fullContent += jsonData.content;
-//                 botMessage.innerHTML = marked.parse(fullContent);
-//                 botMessage.scrollIntoView({ behavior: "smooth" });
-//               }
-//             } catch (e) {
-//               // If JSON parsing fails, it might be a chat ID message
-//               if (!chatIdReceived && data.includes("__CHATID__")) {
-//                 const matches = data.match(/__CHATID__([^_]+)__/);
-//                 if (matches && matches[1]) {
-//                   currentChatId = matches[1];
-//                   console.log("Received chatId:", currentChatId);
-//                   loadChatThreads();
-//                   chatIdReceived = true;
-//                 }
-//               } else {
-//                 console.error("Error processing stream chunk:", e);
-//               }
-//             }
-//           }
-//         }
-//       }
-
-//       // Final update with remaining buffer
-//       if (buffer.startsWith("data: ")) {
-//         try {
-//           const data = JSON.parse(buffer.slice(6));
-//           if (data.content) {
-//             fullContent += data.content;
-//             botMessage.innerHTML = marked.parse(fullContent);
-//           }
-//         } catch (e) {
-//           console.error("Error parsing final chunk:", e);
-//         }
-//       }
-//     } else {
-//       // Existing non-stream handling
-//       const data = await response.json();
-//       addMessage("bot", data.result.content);
-
-//       if (!currentChatId && data.chatId) {
-//         currentChatId = data.chatId;
-//         loadChatThreads();
-//       }
-//     }
-//   } catch (error) {
-//     console.error("Error:", error);
-//     chatHistoryEl.removeChild(typingIndicator);
-//     addMessage("bot", "Sorry, I couldn't process your message.");
-//   }
-// }
 
 async function sendMessage(message) {
-  const stream = true;
+  const stream = false;
   const model = modelSelect.value;
   const body = {
     message,
     model,
     chatId: currentChatId || undefined,
+    // reasoning: true,
   };
 
   const typingIndicator = createTypingIndicator();
@@ -693,6 +550,7 @@ async function sendMessage(message) {
               }
 
               if (jsonData.content) {
+                console.log(jsonData.content);
                 fullContent += jsonData.content;
                 tempTextNode.nodeValue = fullContent;
                 botMessage.scrollIntoView({ behavior: "smooth" });
